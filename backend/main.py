@@ -14,6 +14,7 @@ from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.llm import ChatContext, ChatMessage
 # We'll use the pre-built STT interfaces, but we might need to construct the plugin manually if we want to switch easily
 from livekit.plugins import assemblyai
+import time
 
 # Load env
 load_dotenv()
@@ -42,7 +43,7 @@ app = FastAPI(lifespan=lifespan)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], # use the app url in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -164,7 +165,6 @@ async def run_agent_for_room(room_id: str):
     # Let's use `rtc.Room` directly for maximum control given the API requirement.
     
     room = rtc.Room()
-    
     # We need a token for the agent
     from livekit import api
     token_verifier = api.AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET) \
@@ -193,6 +193,12 @@ async def run_agent_for_room(room_id: str):
                     if pub.track and pub.track.kind == rtc.TrackKind.KIND_AUDIO:
                         asyncio.create_task(handle_audio_track(pub.track, p, stt, room_id))
             
+            @room.on("participant_disconnected")
+            def on_participant_disconnected(participant: rtc.RemoteParticipant):
+                if len(room.remote_participants) == 0:
+                    logger.info(f"Room {room_id} is empty, disconnecting agent.")
+                    asyncio.create_task(room.disconnect())
+
             # Keep alive until room is empty or closed
             while room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
                 await asyncio.sleep(1)
