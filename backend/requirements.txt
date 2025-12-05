@@ -1,0 +1,6 @@
+livekit-agents
+livekit-plugins-assemblyai
+fastapi
+uvicorn
+python-dotenv
+openai
