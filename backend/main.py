@@ -12,7 +12,6 @@ from fastapi.responses import StreamingResponse
 from livekit import agents, rtc
 from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.llm import ChatContext, ChatMessage
-# We'll use the pre-built STT interfaces, but we might need to construct the plugin manually if we want to switch easily
 from livekit.plugins import assemblyai
 import time
 
@@ -72,10 +71,6 @@ class TranscriberAgent:
     async def start(self):
         logger.info(f"Starting agent for room {self.room_id}")
         await self.ctx.connect(auto_subscribe=agents.AutoSubscribe.AUDIO_ONLY)
-        
-        # In a real agent workflow, we often listen to TrackSubscribed.
-        # But for simple STT on all tracks, LiveKit Agents offers helpers.
-        # We'll manually handle tracks to have fine control over identifying speakers.
 
         @self.ctx.room.on("track_subscribed")
         def on_track_subscribed(track: rtc.Track, publication: rtc.TrackPublication, participant: rtc.RemoteParticipant):
@@ -133,37 +128,9 @@ class TranscriberAgent:
             for q in transcript_queues[room_id]:
                 await q.put(message)
 
-# Manager to effectively "dispatch" agents manually if needed, 
-# BUT standard LiveKit Agents connects to the server and the server dispatch jobs to it.
-# The user wants "/attach-transcriber" to ensure an agent is attached.
-# LiveKit's standard way is that the Agent Worker connects to LiveKit, and LiveKit assigns it rooms.
-# However, for this specific request "attach-transcriber", we can use the explicit Dispatch API from LiveKit Server SDK
-# to request a job for this worker. Or simpler: The agent is just a client connecting to the room.
-#
-# The Prompt says: "Agent logic: Connect to LiveKit... Attach to specified roomId... "
-# This implies the Python process acts more like a dynamic client or uses the Agent Dispatch framework.
-# 
-# Simplest Production approach with `livekit-agents`:
-# Run a Worker. The /attach-transcriber API will use `livekit-api` (Server SDK) to create a Job for the worker,
-# OR we can just have the Python /attach endpoint spawn a task that connects to the room as a participant.
-# Given "No hardcoded room IDs", standard Agent Dispatch is best.
-#
-# However, the user wants a simple /attach-transcriber API on the Python side. 
-# Implementing a "Worker" that listens to a specific job queue is the standard way.
-# Let's try to map the User's "Attach" request to "Dispatching a Job" or "Direct Connection".
-# Direct Connection is easier for a "minimal" app without complex dispatch rules.
-# We will use a global dictionary of running agents.
-
 running_agents: Dict[str, asyncio.Task] = {}
 
 async def run_agent_for_room(room_id: str):
-    # This function acts as the "Worker" for a specific room.
-    # We will use the lower-level API or the Worker class in a non-standard way 
-    # OR simpler: Just manually use `rtc.Room` and `STT` without the full `Worker` heavy lifting 
-    # if we want absolute manual control via API.
-    # BUT `livekit-agents` provides nice wrappers.
-    # Let's use `rtc.Room` directly for maximum control given the API requirement.
-    
     room = rtc.Room()
     # We need a token for the agent
     from livekit import api
